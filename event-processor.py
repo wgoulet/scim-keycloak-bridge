@@ -12,17 +12,92 @@ from requests_oauthlib import OAuth2Session
 
 def listen_kc_event(event):
     if('operationType' in event.keys()):
-        process_user_event(event)
+        process_event(event)
 
-def process_user_event(event):
+def process_event(event):
     client_id = os.environ.get('CLIENT_ID')
     client_secret = os.environ.get('CLIENT_SECRET')
     token_url = os.environ.get('TOKEN_URL')
     client = BackendApplicationClient(client_id=client_id)
-    oauth = OAuth2Session(client=client)
-    token = oauth.fetch_token(token_url=token_url,client_id=client_id,client_secret=client_secret)
-    pprint.pprint(token)
-    pprint.pprint(event)
+    kcclient = OAuth2Session(client=client)
+    token = kcclient.fetch_token(token_url=token_url,client_id=client_id,client_secret=client_secret)
+    if((event['operationType'] == 'CREATE') and (event['resourceType'] == 'USER')):
+        resp = kcclient.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/{event['resourcePath']}")
+        create_user_via_scim(user=resp.json(),kc_client=kcclient)
+    elif((event['operationType'] == 'CREATE') and (event['resourceType']) == 'GROUP'):
+        resp = kcclient.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/{event['resourcePath']}")
+        create_group_via_scim(group=resp.json())
+    elif((event['operationType'] == 'CREATE') and (event['resourceType']) == 'GROUP_MEMBERSHIP'):
+        assign_user_to_group_via_scim(event=event,kc_client=kcclient)
+
+        
+def assign_user_to_group_via_scim(event,kc_client):
+    (ulabel,userId,glabel,groupId) = event['resourcePath'].split('/')  
+    resp = kc_client.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{userId}")
+    userinfo = resp.json()
+    resp = kc_client.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/groups/{groupId}")
+    groupinfo = resp.json()
+    userinfo
+    groupinfo
+
+def create_user_via_scim(user,kc_client):
+    # create SCIM compliant user object
+    # per AWS SCIM docs, The givenName, familyName, userName, and displayName fields are required.
+
+    userobj = {}
+    nameobj = {}
+    nameobj['givenName'] = user['firstName']
+    nameobj['familyName'] = user['lastName']
+    userobj['userName'] = user['username']
+    userobj['name'] = nameobj
+    userobj['displayName'] = user['username']
+    userobj['active'] = True
+    userobj['externalId'] = user['id']
+    emails = []
+    emails.append(
+            {
+                "value":user['email'],
+                "type":'work',
+                "primary":True
+            }
+        )
+    userobj['emails'] = emails
+
+    client_id=os.environ.get('SCIM_TOKEN_CLIENT_ID')
+    scim_access_token=os.environ.get('SCIM_ACCESS_TOKEN')
+    scim_endpoint=os.environ.get('SCIM_ENDPOINT')
+    client = BackendApplicationClient(client_id=client_id)
+    scimsession = OAuth2Session(client=client)
+    scimsession.access_token=scim_access_token
+    scimsession.token=scim_access_token
+    resp = scimsession.post(f"{scim_endpoint}Users",json=userobj)
+    pprint.pprint(resp.json())
+    # Store the AWS ID value as an attribute for the user
+    UserRepresentation = {
+        'attributes':[
+            {"idval":13324}
+        ] 
+    }
+    resp = kc_client.put(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{user['id']}",json=UserRepresentation)
+    resp
+
+def create_group_via_scim(group):
+        # create SCIM compliant group object
+        # per AWS SCIM docs, The displayName fields are required.
+
+        groupobj = {}
+        groupobj['externalId'] = group['id']
+        groupobj['displayName'] = group['name']
+
+        client_id=os.environ.get('SCIM_TOKEN_CLIENT_ID')
+        scim_access_token=os.environ.get('SCIM_ACCESS_TOKEN')
+        scim_endpoint=os.environ.get('SCIM_ENDPOINT')
+        client = BackendApplicationClient(client_id=client_id)
+        scimsession = OAuth2Session(client=client)
+        scimsession.access_token=scim_access_token
+        scimsession.token=scim_access_token
+        resp = scimsession.post(f"{scim_endpoint}Groups",json=groupobj)
+    
 
 def read_journald_logs(since=None, until=None, unit=None):
     # Read log entries from journald that are created by keycloak. 
@@ -53,7 +128,7 @@ def read_journald_logs(since=None, until=None, unit=None):
                                     logobject = {}
                                     for entry in row:
                                         (key,value) = entry.split('=')
-                                        logobject[key] = value
+                                        logobject[key.strip()] = value.strip()
                                     # Publish an event with the created object when we find a keycloak event of interest
                                     pub.sendMessage('rootTopic',event=logobject)
                     except json.decoder.JSONDecodeError as err:
