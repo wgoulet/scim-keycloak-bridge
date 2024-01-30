@@ -26,12 +26,19 @@ def process_event(event):
         create_user_via_scim(user=resp.json(),kc_client=kcclient)
     elif((event['operationType'] == 'CREATE') and (event['resourceType']) == 'GROUP'):
         resp = kcclient.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/{event['resourcePath']}")
-        create_group_via_scim(group=resp.json())
+        create_group_via_scim(group=resp.json(),kc_client=kcclient)
     elif((event['operationType'] == 'CREATE') and (event['resourceType']) == 'GROUP_MEMBERSHIP'):
         assign_user_to_group_via_scim(event=event,kc_client=kcclient)
 
         
 def assign_user_to_group_via_scim(event,kc_client):
+    client_id=os.environ.get('SCIM_TOKEN_CLIENT_ID')
+    scim_access_token=os.environ.get('SCIM_ACCESS_TOKEN')
+    scim_endpoint=os.environ.get('SCIM_ENDPOINT')
+    client = BackendApplicationClient(client_id=client_id)
+    scimsession = OAuth2Session(client=client)
+    scimsession.access_token=scim_access_token
+    scimsession.token=scim_access_token
     (ulabel,userId,glabel,groupId) = event['resourcePath'].split('/')  
     resp = kc_client.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{userId}")
     userinfo = resp.json()
@@ -39,6 +46,21 @@ def assign_user_to_group_via_scim(event,kc_client):
     groupinfo = resp.json()
     userinfo
     groupinfo
+    patchop = {
+        'schemas':["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+        'Operations':[
+            {
+                'op':'add',
+                'path':"members",
+                'value':[
+                    {'value':userinfo['attributes']['awsid'][0]}
+                ]
+            }
+        ]
+    }
+    resp = scimsession.patch(f"{scim_endpoint}Groups/{groupinfo['attributes']['awsid'][0]}",json=patchop)
+    resp
+    
 
 def create_user_via_scim(user,kc_client):
     # create SCIM compliant user object
@@ -71,17 +93,18 @@ def create_user_via_scim(user,kc_client):
     scimsession.access_token=scim_access_token
     scimsession.token=scim_access_token
     resp = scimsession.post(f"{scim_endpoint}Users",json=userobj)
+    awsuserobj = resp.json()
     pprint.pprint(resp.json())
-    # Store the AWS ID value as an attribute for the user
-    UserRepresentation = {
-        'attributes':[
-            {"idval":13324}
-        ] 
+    # Store the AWS ID value as an attribute for the user; we'll need this
+    # to find the user in AWS IAM ID center later for update operations
+    userattr = {
+        'attributes':{
+            "awsid":[awsuserobj['id']]
+        } 
     }
-    resp = kc_client.put(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{user['id']}",json=UserRepresentation)
-    resp
+    resp = kc_client.put(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{user['id']}",json=userattr)
 
-def create_group_via_scim(group):
+def create_group_via_scim(group,kc_client):
         # create SCIM compliant group object
         # per AWS SCIM docs, The displayName fields are required.
 
@@ -97,6 +120,18 @@ def create_group_via_scim(group):
         scimsession.access_token=scim_access_token
         scimsession.token=scim_access_token
         resp = scimsession.post(f"{scim_endpoint}Groups",json=groupobj)
+        awsgroupobj = resp.json()
+        pprint.pprint(resp.json())
+        # Store the AWS ID value as an attribute for the user; we'll need this
+        # to find the user in AWS IAM ID center later for update operations
+        groupattr = {
+            'name':group['name'],
+            'attributes':{
+                "awsid":[awsgroupobj['id']]
+            } 
+        }
+        resp = kc_client.put(f"https://keycloak.wgoulet.com/admin/realms/Infra/groups/{group['id']}",json=groupattr)
+        resp
     
 
 def read_journald_logs(since=None, until=None, unit=None):
