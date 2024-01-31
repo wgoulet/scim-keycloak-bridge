@@ -6,17 +6,60 @@ from datetime import datetime, timedelta
 import json
 import pprint
 import os
+import time
 from pubsub import pub
 from oauthlib.oauth2 import BackendApplicationClient
 from requests_oauthlib import OAuth2Session
+from threading import Thread
 
 # TODO: Consider implementing a job that will sweep through all users
 # and make sure that their attributes assigning them to AWS are set correctly
 # spefically handling the case where AWS IDs are removed from KC user attributes
 
-def listen_kc_event(event):
-    if('operationType' in event.keys()):
-        process_event(event)
+def reconciliation_job(args):
+    # Setup connections to keycloak and AWS
+    client_id = os.environ.get('CLIENT_ID')
+    client_secret = os.environ.get('CLIENT_SECRET')
+    token_url = os.environ.get('TOKEN_URL')
+    client = BackendApplicationClient(client_id=client_id)
+    kcclient = OAuth2Session(client=client)
+    token = kcclient.fetch_token(token_url=token_url,client_id=client_id,client_secret=client_secret)
+    scim_client_id=os.environ.get('SCIM_TOKEN_CLIENT_ID')
+    scim_access_token=os.environ.get('SCIM_ACCESS_TOKEN')
+    scim_endpoint=os.environ.get('SCIM_ENDPOINT')
+    scim_client = BackendApplicationClient(client_id=scim_client_id)
+    scimsession = OAuth2Session(client=scim_client)
+    scimsession.access_token=scim_access_token
+    scimsession.token=scim_access_token
+    while(True):
+        pprint.pprint(f"Executing cleanup job!")
+        listusers = []
+        time.sleep(1)
+        # Get list of KC users and for each one, query AWS to see if the kc id matches the external ID
+        # AND if the user does NOT have the awsenabled and awsid attributes set, delete the user from 
+        # AWS. 
+        resp = kcclient.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/users")
+        users = resp.json()
+        for user in users:
+            if('attributes' in user.keys()):
+                attributes = user['attributes']
+                if(('awsid' not in attributes) or  
+                    (('awsenabled' not in attributes) or (attributes['awsenabled'][0] != 'true'))):
+                    id = user['id']
+                    listusers.append(id)
+            else: # Handle case where user has no attributes at all
+                    id = user['id']
+                    listusers.append(id)
+                    
+        for id in listusers:
+            filterexpr = f"filter=externalId eq \"{id}\""
+            resp = scimsession.get(f"{scim_endpoint}Users?{filterexpr}")
+            result = resp.json()
+            if(result['totalResults'] > 0):
+                for resource in result['Resources']:
+                    pprint.pprint(f"Will delete user {resource['userName']} from AWS via scim!")
+                    resp = scimsession.delete(f"{scim_endpoint}Users/{resource['id']}")
+
 
 def process_event(event):
     client_id = os.environ.get('CLIENT_ID')
@@ -43,6 +86,8 @@ def check_create_user_via_scim(user,kc_client):
     if('attributes' not in user.keys()):
         pprint.pprint('user not created in scim, missing attributes')
         return
+    else:
+        pprint.pprint(f"provisioning user {user} via scim")
     attributes = user['attributes']
     # we might be here because the user was just created then updated, or they might exist already
     # and the attributes assigning them to AWS were removed. If they don't have an AWS ID then they should be created
@@ -103,6 +148,7 @@ def check_create_user_via_scim(user,kc_client):
                 'attributes': attributes
             }
             resp = kc_client.put(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{user['id']}",json=userattr)
+            pprint.pprint(f"User {user['id']} removed from AWS")
     
         
 def assign_user_to_group_via_scim(event,kc_client):
@@ -195,12 +241,13 @@ def read_journald_logs(since=None, until=None, unit=None):
                                     for entry in row:
                                         (key,value) = entry.split('=')
                                         logobject[key.strip()] = value.strip()
-                                    # Publish an event with the created object when we find a keycloak event of interest
-                                    pub.sendMessage('rootTopic',event=logobject)
+                                if('operationType' in logobject.keys()):
+                                    process_event(logobject)
                     except json.decoder.JSONDecodeError as err:
                         print("Not in json format")
                         print(err.doc)
                         continue
 
-pub.subscribe(listen_kc_event,'rootTopic')
+t = Thread(target=reconciliation_job,args=("run",))
+t.start()
 read_journald_logs()
