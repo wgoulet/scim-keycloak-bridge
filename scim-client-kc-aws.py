@@ -10,6 +10,10 @@ from pubsub import pub
 from oauthlib.oauth2 import BackendApplicationClient
 from requests_oauthlib import OAuth2Session
 
+# TODO: Consider implementing a job that will sweep through all users
+# and make sure that their attributes assigning them to AWS are set correctly
+# spefically handling the case where AWS IDs are removed from KC user attributes
+
 def listen_kc_event(event):
     if('operationType' in event.keys()):
         process_event(event)
@@ -21,15 +25,87 @@ def process_event(event):
     client = BackendApplicationClient(client_id=client_id)
     kcclient = OAuth2Session(client=client)
     token = kcclient.fetch_token(token_url=token_url,client_id=client_id,client_secret=client_secret)
-    if((event['operationType'] == 'CREATE') and (event['resourceType'] == 'USER')):
-        resp = kcclient.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/{event['resourcePath']}")
-        create_user_via_scim(user=resp.json(),kc_client=kcclient)
-    elif((event['operationType'] == 'CREATE') and (event['resourceType']) == 'GROUP'):
+    if((event['operationType'] == 'CREATE') and (event['resourceType']) == 'GROUP'):
         resp = kcclient.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/{event['resourcePath']}")
         create_group_via_scim(group=resp.json(),kc_client=kcclient)
     elif((event['operationType'] == 'CREATE') and (event['resourceType']) == 'GROUP_MEMBERSHIP'):
         assign_user_to_group_via_scim(event=event,kc_client=kcclient)
+    if(((event['operationType'] == 'UPDATE') or (event['operationType'] == 'CREATE')) and (event['resourceType'] == 'USER')):
+        # only time we will consider creating the user via SCIM is if we see that an attribute
+        # has been set for them. If user is created with attributes in one operation via API
+        # we'll handle that as well as if the user is created then attributes added later
+        resp = kcclient.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/{event['resourcePath']}")
+        check_create_user_via_scim(user=resp.json(),kc_client=kcclient)
 
+def check_create_user_via_scim(user,kc_client):
+    # create SCIM compliant user object in AWS IAM ID center if usedr has appropriate attribute
+    # per AWS SCIM docs, The givenName, familyName, userName, and displayName fields are required.
+    if('attributes' not in user.keys()):
+        pprint.pprint('user not created in scim, missing attributes')
+        return
+    attributes = user['attributes']
+    # we might be here because the user was just created then updated, or they might exist already
+    # and the attributes assigning them to AWS was removed. If they don't have an AWS ID then they should be created
+    if(('awsenabled' in attributes) and ('awsid' not in attributes)): 
+        if(attributes['awsenabled'][0] == 'true'):
+            userobj = {}
+            nameobj = {}
+            nameobj['givenName'] = user['firstName']
+            nameobj['familyName'] = user['lastName']
+            userobj['userName'] = user['username']
+            userobj['name'] = nameobj
+            userobj['displayName'] = user['username']
+            userobj['active'] = True
+            userobj['externalId'] = user['id']
+            emails = []
+            emails.append(
+                    {
+                        "value":user['email'],
+                        "type":'work',
+                        "primary":True
+                    }
+                )
+            userobj['emails'] = emails
+
+            client_id=os.environ.get('SCIM_TOKEN_CLIENT_ID')
+            scim_access_token=os.environ.get('SCIM_ACCESS_TOKEN')
+            scim_endpoint=os.environ.get('SCIM_ENDPOINT')
+            client = BackendApplicationClient(client_id=client_id)
+            scimsession = OAuth2Session(client=client)
+            scimsession.access_token=scim_access_token
+            scimsession.token=scim_access_token
+            resp = scimsession.post(f"{scim_endpoint}Users",json=userobj)
+            awsuserobj = resp.json()
+            pprint.pprint(resp.json())
+            # Store the AWS ID value as an attribute for the user; we'll need this
+            # to find the user in AWS IAM ID center later for update operations
+            attributes['awsid'] = awsuserobj['id']
+            userattr = {
+                'attributes': attributes
+            }
+            resp = kc_client.put(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{user['id']}",json=userattr)
+            user
+    elif('awsid' in attributes): 
+        if(('awsenabled' not in attributes) or (attributes['awsenabled'][0] != 'true')):
+            # remove the user from AWS via scim
+            client_id=os.environ.get('SCIM_TOKEN_CLIENT_ID')
+            scim_access_token=os.environ.get('SCIM_ACCESS_TOKEN')
+            scim_endpoint=os.environ.get('SCIM_ENDPOINT')
+            client = BackendApplicationClient(client_id=client_id)
+            scimsession = OAuth2Session(client=client)
+            scimsession.access_token=scim_access_token
+            scimsession.token=scim_access_token
+            resp = scimsession.delete(f"{scim_endpoint}Users/{attributes['awsid'][0]}")
+            # since we are deleting the user via scim lets clear the awsid attribute from
+            # the user's account in kc
+             # Store the AWS ID value as an attribute for the user; we'll need this
+            # to find the user in AWS IAM ID center later for update operations
+            del attributes['awsid']
+            userattr = {
+                'attributes': attributes
+            }
+            resp = kc_client.put(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{user['id']}",json=userattr)
+    
         
 def assign_user_to_group_via_scim(event,kc_client):
     client_id=os.environ.get('SCIM_TOKEN_CLIENT_ID')
@@ -61,49 +137,6 @@ def assign_user_to_group_via_scim(event,kc_client):
     resp = scimsession.patch(f"{scim_endpoint}Groups/{groupinfo['attributes']['awsid'][0]}",json=patchop)
     resp
     
-
-def create_user_via_scim(user,kc_client):
-    # create SCIM compliant user object
-    # per AWS SCIM docs, The givenName, familyName, userName, and displayName fields are required.
-
-    userobj = {}
-    nameobj = {}
-    nameobj['givenName'] = user['firstName']
-    nameobj['familyName'] = user['lastName']
-    userobj['userName'] = user['username']
-    userobj['name'] = nameobj
-    userobj['displayName'] = user['username']
-    userobj['active'] = True
-    userobj['externalId'] = user['id']
-    emails = []
-    emails.append(
-            {
-                "value":user['email'],
-                "type":'work',
-                "primary":True
-            }
-        )
-    userobj['emails'] = emails
-
-    client_id=os.environ.get('SCIM_TOKEN_CLIENT_ID')
-    scim_access_token=os.environ.get('SCIM_ACCESS_TOKEN')
-    scim_endpoint=os.environ.get('SCIM_ENDPOINT')
-    client = BackendApplicationClient(client_id=client_id)
-    scimsession = OAuth2Session(client=client)
-    scimsession.access_token=scim_access_token
-    scimsession.token=scim_access_token
-    resp = scimsession.post(f"{scim_endpoint}Users",json=userobj)
-    awsuserobj = resp.json()
-    pprint.pprint(resp.json())
-    # Store the AWS ID value as an attribute for the user; we'll need this
-    # to find the user in AWS IAM ID center later for update operations
-    userattr = {
-        'attributes':{
-            "awsid":[awsuserobj['id']]
-        } 
-    }
-    resp = kc_client.put(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{user['id']}",json=userattr)
-
 def create_group_via_scim(group,kc_client):
         # create SCIM compliant group object
         # per AWS SCIM docs, The displayName fields are required.
