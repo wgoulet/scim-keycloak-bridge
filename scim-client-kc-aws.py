@@ -38,14 +38,14 @@ def process_event(event):
         check_create_user_via_scim(user=resp.json(),kc_client=kcclient)
 
 def check_create_user_via_scim(user,kc_client):
-    # create SCIM compliant user object in AWS IAM ID center if usedr has appropriate attribute
+    # create SCIM compliant user object in AWS IAM ID center if user has appropriate attribute
     # per AWS SCIM docs, The givenName, familyName, userName, and displayName fields are required.
     if('attributes' not in user.keys()):
         pprint.pprint('user not created in scim, missing attributes')
         return
     attributes = user['attributes']
     # we might be here because the user was just created then updated, or they might exist already
-    # and the attributes assigning them to AWS was removed. If they don't have an AWS ID then they should be created
+    # and the attributes assigning them to AWS were removed. If they don't have an AWS ID then they should be created
     if(('awsenabled' in attributes) and ('awsid' not in attributes)): 
         if(attributes['awsenabled'][0] == 'true'):
             userobj = {}
@@ -98,8 +98,6 @@ def check_create_user_via_scim(user,kc_client):
             resp = scimsession.delete(f"{scim_endpoint}Users/{attributes['awsid'][0]}")
             # since we are deleting the user via scim lets clear the awsid attribute from
             # the user's account in kc
-             # Store the AWS ID value as an attribute for the user; we'll need this
-            # to find the user in AWS IAM ID center later for update operations
             del attributes['awsid']
             userattr = {
                 'attributes': attributes
