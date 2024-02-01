@@ -10,56 +10,6 @@ import time
 from pubsub import pub
 from oauthlib.oauth2 import BackendApplicationClient
 from requests_oauthlib import OAuth2Session
-from threading import Thread
-
-# TODO: Consider implementing a job that will sweep through all users
-# and make sure that their attributes assigning them to AWS are set correctly
-# spefically handling the case where AWS IDs are removed from KC user attributes
-
-def reconciliation_job(args):
-    # Setup connections to keycloak and AWS
-    client_id = os.environ.get('CLIENT_ID')
-    client_secret = os.environ.get('CLIENT_SECRET')
-    token_url = os.environ.get('TOKEN_URL')
-    client = BackendApplicationClient(client_id=client_id)
-    kcclient = OAuth2Session(client=client)
-    token = kcclient.fetch_token(token_url=token_url,client_id=client_id,client_secret=client_secret)
-    scim_client_id=os.environ.get('SCIM_TOKEN_CLIENT_ID')
-    scim_access_token=os.environ.get('SCIM_ACCESS_TOKEN')
-    scim_endpoint=os.environ.get('SCIM_ENDPOINT')
-    scim_client = BackendApplicationClient(client_id=scim_client_id)
-    scimsession = OAuth2Session(client=scim_client)
-    scimsession.access_token=scim_access_token
-    scimsession.token=scim_access_token
-    while(True):
-        pprint.pprint(f"Executing cleanup job!")
-        listusers = []
-        time.sleep(1)
-        # Get list of KC users and for each one, query AWS to see if the kc id matches the external ID
-        # AND if the user does NOT have the awsenabled and awsid attributes set, delete the user from 
-        # AWS. 
-        resp = kcclient.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/users")
-        users = resp.json()
-        for user in users:
-            if('attributes' in user.keys()):
-                attributes = user['attributes']
-                if(('awsid' not in attributes) or  
-                    (('awsenabled' not in attributes) or (attributes['awsenabled'][0] != 'true'))):
-                    id = user['id']
-                    listusers.append(id)
-            else: # Handle case where user has no attributes at all
-                    id = user['id']
-                    listusers.append(id)
-                    
-        for id in listusers:
-            filterexpr = f"filter=externalId eq \"{id}\""
-            resp = scimsession.get(f"{scim_endpoint}Users?{filterexpr}")
-            result = resp.json()
-            if(result['totalResults'] > 0):
-                for resource in result['Resources']:
-                    pprint.pprint(f"Will delete user {resource['userName']} from AWS via scim!")
-                    resp = scimsession.delete(f"{scim_endpoint}Users/{resource['id']}")
-
 
 def process_event(event):
     client_id = os.environ.get('CLIENT_ID')
@@ -78,9 +28,9 @@ def process_event(event):
         # has been set for them. If user is created with attributes in one operation via API
         # we'll handle that as well as if the user is created then attributes added later
         resp = kcclient.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/{event['resourcePath']}")
-        check_create_user_via_scim(user=resp.json(),kc_client=kcclient)
+        check_create_update_user_via_scim(user=resp.json(),kc_client=kcclient)
 
-def check_create_user_via_scim(user,kc_client):
+def check_create_update_user_via_scim(user,kc_client):
     # create SCIM compliant user object in AWS IAM ID center if user has appropriate attribute
     # per AWS SCIM docs, The givenName, familyName, userName, and displayName fields are required.
     if('attributes' not in user.keys()):
@@ -120,16 +70,33 @@ def check_create_user_via_scim(user,kc_client):
             scimsession.access_token=scim_access_token
             scimsession.token=scim_access_token
             resp = scimsession.post(f"{scim_endpoint}Users",json=userobj)
+            # We might also be in this state because an admin accidentally deleted the awsid attribute
+            # value after the user was enabled in keycloak and provisioned. So if we get a duplicate 
+            # record error from SCIM, let's fetch the AWS ID matching our user and update the user
+            # record in keycloak with a new awsid attribute
             awsuserobj = resp.json()
-            pprint.pprint(resp.json())
-            # Store the AWS ID value as an attribute for the user; we'll need this
-            # to find the user in AWS IAM ID center later for update operations
-            attributes['awsid'] = awsuserobj['id']
-            userattr = {
-                'attributes': attributes
-            }
-            resp = kc_client.put(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{user['id']}",json=userattr)
-            user
+            if(('status' in awsuserobj.keys()) and (awsuserobj['status'] == '409')):
+                filterexpr = f"filter=externalId eq \"{userobj['externalId']}\""
+                resp = scimsession.get(f"{scim_endpoint}Users?{filterexpr}")
+                result = resp.json()
+                if(result['totalResults'] > 0):
+                    for resource in result['Resources']:
+                        resp = scimsession.get(f"{scim_endpoint}Users/{resource['id']}")
+                        tmpuserobj = resp.json()
+                        attributes['awsid'] = tmpuserobj['id']
+                        userattr = {
+                            'attributes': attributes
+                        }
+                resp = kc_client.put(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{user['id']}",json=userattr)
+            else:
+                pprint.pprint(resp.json())
+                # Store the AWS ID value as an attribute for the user; we'll need this
+                # to find the user in AWS IAM ID center later for update operations
+                attributes['awsid'] = awsuserobj['id']
+                userattr = {
+                    'attributes': attributes
+                }
+                resp = kc_client.put(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{user['id']}",json=userattr)
     elif('awsid' in attributes): 
         if(('awsenabled' not in attributes) or (attributes['awsenabled'][0] != 'true')):
             # remove the user from AWS via scim
@@ -248,6 +215,4 @@ def read_journald_logs(since=None, until=None, unit=None):
                         print(err.doc)
                         continue
 
-t = Thread(target=reconciliation_job,args=("run",))
-t.start()
 read_journald_logs()
