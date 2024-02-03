@@ -14,18 +14,35 @@ import org.keycloak.models.RealmProvider;
 import org.keycloak.models.UserModel;
 import com.rabbitmq.client.*;
 
-import com.rabbitmq.client.ConnectionFactory;
-
 public class SCIMEventListenerProvider implements EventListenerProvider {
 
     private static final Logger log = Logger.getLogger(SCIMEventListenerProvider.class);
 
     private final KeycloakSession session;
     private final RealmProvider model;
+    private Channel channel;
 
     public SCIMEventListenerProvider(KeycloakSession session) {
         this.session = session;
         this.model = session.realms();
+        String rabbitmqpwd = System.getenv("RABBITMQPWD");
+        String rabbitmquname = System.getenv("RABBITMQUNAME");
+        String rabbitmqvhost = System.getenv("RABBITMQVHOST");
+        String rabbitmqhost = System.getenv("RABBITMQHOST");
+        ConnectionFactory factory = new ConnectionFactory();
+        factory.setHost(rabbitmqhost);
+        Connection connection;
+            factory.setUsername(rabbitmquname);
+            factory.setPassword(rabbitmqpwd);
+            factory.setVirtualHost(rabbitmqvhost);
+            try {
+                connection = factory.newConnection();
+                this.channel = connection.createChannel();
+                channel.queueDeclare("scimbridge", false, false, false, null);
+            } catch (IOException | TimeoutException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            }
     }
 
     @Override
@@ -35,19 +52,7 @@ public class SCIMEventListenerProvider implements EventListenerProvider {
 
     @Override
     public void onEvent(AdminEvent adminEvent, boolean b) {
-        String rabbitmqpwd = System.getenv("RABBITMQPWD");
-        String rabbitmquname = System.getenv("RABBITMQUNAME");
-        String rabbitmqvhost = System.getenv("RABBITMQVHOST");
-        ConnectionFactory factory = new ConnectionFactory();
-        factory.setHost("localhost");
-        Connection connection;
         try {
-            factory.setUsername(rabbitmquname);
-            factory.setPassword(rabbitmqpwd);
-            factory.setVirtualHost(rabbitmqvhost);
-            connection = factory.newConnection();
-            Channel channel = connection.createChannel();
-            channel.queueDeclare("scimbridge", false, false, false, null);
             if(adminEvent.getOperationType() != OperationType.DELETE) {
                 channel.basicPublish("", "scimbridge", null, adminEvent.getRepresentation().getBytes());
             }
@@ -57,13 +62,11 @@ public class SCIMEventListenerProvider implements EventListenerProvider {
             System.out.println("About to log event!");
             System.out.println(adminEvent.getRepresentation());
             System.out.println("Event logged!!");
-        } catch (IOException | TimeoutException e) {
+        } catch (IOException e) {
             // TODO Auto-generated catch block
             System.out.println("Fatal error!");
             e.printStackTrace();
         }
-       
-
     }
 
     @Override
