@@ -54,9 +54,10 @@ public class SCIMEventListenerProviderFactory implements EventListenerProviderFa
                                 System.out.println(dEvent.getUser().getEmail());
                                 try {
                                     ObjectMapper mapper = new ObjectMapper();
-                                    DetailDeletedUser duser = new DetailDeletedUser(dEvent,dEvent.getUser());
+                                    DetailDeletedUser duser = new DetailDeletedUser(dEvent);
                                     byte[] userObj = mapper.writeValueAsBytes(duser);
                                     //byte[] userObj = mapper.writeValueAsBytes(dEvent.getUser());
+                                    channel.basicPublish("", "scimbridge", null, "Publishing delete event below".getBytes());
                                     channel.basicPublish("", "scimbridge", null, userObj);
                                 } catch (IOException e) {
                                     // TODO Auto-generated catch block

@@ -1,35 +1,24 @@
 package com.wgoulet;
+
 import org.keycloak.models.UserModel;
-import org.keycloak.models.UserModel.UserRemovedEvent;
+import java.util.Map;
+import java.util.List;
 
 public class DetailDeletedUser {
+    private UserModel.UserRemovedEvent dEvent;
     public DetailDeletedUser() {
-        this.dEvent = null;
-        this.userModel = null;
     }
 
-    UserModel.UserRemovedEvent dEvent;
-    UserModel userModel;
-    public DetailDeletedUser(UserRemovedEvent dEvent, UserModel userModel) {
-        this.dEvent = dEvent;
-        this.userModel = userModel;
-    }
-
-    public UserModel getUserModel() {
-        return userModel;
-    }
-
-    public void setUserModel(UserModel userModel) {
-        this.userModel = userModel;
-    }
-
-    public UserModel.UserRemovedEvent getdEvent() {
-        return dEvent;
-    }
-
-    public void setdEvent(UserModel.UserRemovedEvent dEvent) {
+    public DetailDeletedUser(UserModel.UserRemovedEvent dEvent) {
         this.dEvent = dEvent;
     }
 
+    public String getUserName() {
+        return dEvent.getUser().getUsername();
+    }
+
+    public Map<String,List<String>> getAttributes() {
+        return dEvent.getUser().getAttributes();
+    }
 
 }
