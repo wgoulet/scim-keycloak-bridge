@@ -58,11 +58,11 @@ public class SCIMEventListenerProvider implements EventListenerProvider {
             DetailAdminEvent dEvent = new DetailAdminEvent(adminEvent);
             ObjectMapper mapper = new ObjectMapper();
             String sendString = mapper.writeValueAsString(dEvent.getEventRepresentation());
+            // We won't log delete events here because we don't have any context
+            // about the user to provide. Deletions are handled in the provider factory
+            // instead.
             if(adminEvent.getOperationType() != OperationType.DELETE) {
                 channel.basicPublish("", "scimbridge", null,sendString.getBytes());
-            }
-            else {
-                channel.basicPublish("", "scimbridge", null, "User is being deleted".getBytes());
             }
             System.out.println("About to log event!");
             System.out.println(adminEvent.getRepresentation());

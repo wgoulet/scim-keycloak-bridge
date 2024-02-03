@@ -6,8 +6,8 @@ import java.util.List;
 
 public class DetailDeletedUser {
     private UserModel.UserRemovedEvent dEvent;
-    private static final String opType = "DELETE";
-    public static String getOptype() {
+    private final String opType = "DELETE";
+    public String getOpType() {
         return opType;
     }
 
@@ -24,6 +24,10 @@ public class DetailDeletedUser {
 
     public Map<String,List<String>> getAttributes() {
         return dEvent.getUser().getAttributes();
+    }
+
+    public String getUserId() {
+        return dEvent.getUser().getId();
     }
 
 }

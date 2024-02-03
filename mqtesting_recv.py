@@ -34,17 +34,22 @@ def callback(channel,method,properties,body):
     try:
         body
         devent = json.loads(body.decode("utf-8"))
-        if('opType' in devent): # we were sent a non delete op
-            op = devent['opType']
-            representation = json.loads(devent['representation'])
-            print(op)
-            print(representation)
-        else: # we were sent a delete
-            username = devent['userName']
-            attributes = devent['attributes']
-            print(username)
-            print(attributes)
+        if('opType' in devent): 
+            if(devent['opType'] != 'DELETE'):
+                op = devent['opType']
+                representation = json.loads(devent['representation'])
+                print(op)
+                print(representation)
+            else: 
+                username = devent['userName']
+                attributes = devent['attributes']
+                op = devent['opType']
+                userId = devent['userId']
+                print(op)
+                print(username)
+                print(userId)
+                print(attributes)
     except:
-        True
+        print(f"Error processing {body}")
     
 messagerecv()

@@ -29,7 +29,8 @@ public class SCIMEventListenerProviderFactory implements EventListenerProviderFa
         String rabbitmqpwd = System.getenv("RABBITMQPWD");
         String rabbitmquname = System.getenv("RABBITMQUNAME");
         String rabbitmqvhost = System.getenv("RABBITMQVHOST");
-        factory.setHost("localhost");
+        String rabbitmqhost = System.getenv("RABBITMQHOST");
+        factory.setHost(rabbitmqhost);
         factory.setUsername(rabbitmquname);
         factory.setPassword(rabbitmqpwd);
         factory.setVirtualHost(rabbitmqvhost);
@@ -53,7 +54,6 @@ public class SCIMEventListenerProviderFactory implements EventListenerProviderFa
                                     ObjectMapper mapper = new ObjectMapper();
                                     DetailDeletedUser duser = new DetailDeletedUser(dEvent);
                                     byte[] userObj = mapper.writeValueAsBytes(duser);
-                                    channel.basicPublish("", "scimbridge", null, "Publishing delete event below".getBytes());
                                     channel.basicPublish("", "scimbridge", null, userObj);
                                 } catch (IOException e) {
                                     // TODO Auto-generated catch block
