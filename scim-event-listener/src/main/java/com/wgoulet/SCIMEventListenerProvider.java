@@ -12,6 +12,8 @@ import org.keycloak.events.admin.OperationType;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmProvider;
 import org.keycloak.models.UserModel;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rabbitmq.client.*;
 
 public class SCIMEventListenerProvider implements EventListenerProvider {
@@ -53,8 +55,11 @@ public class SCIMEventListenerProvider implements EventListenerProvider {
     @Override
     public void onEvent(AdminEvent adminEvent, boolean b) {
         try {
+            DetailAdminEvent dEvent = new DetailAdminEvent(adminEvent);
+            ObjectMapper mapper = new ObjectMapper();
+            String sendString = mapper.writeValueAsString(dEvent.getEventRepresentation());
             if(adminEvent.getOperationType() != OperationType.DELETE) {
-                channel.basicPublish("", "scimbridge", null, adminEvent.getRepresentation().getBytes());
+                channel.basicPublish("", "scimbridge", null,sendString.getBytes());
             }
             else {
                 channel.basicPublish("", "scimbridge", null, "User is being deleted".getBytes());

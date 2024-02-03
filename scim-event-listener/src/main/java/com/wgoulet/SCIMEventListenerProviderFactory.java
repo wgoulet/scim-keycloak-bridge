@@ -47,31 +47,18 @@ public class SCIMEventListenerProviderFactory implements EventListenerProviderFa
     public void postInit(KeycloakSessionFactory keycloakSessionFactory) {
             keycloakSessionFactory.register(
                     (event) -> {
-                            System.out.println("Got an event, going to do something");
                             if (event instanceof UserModel.UserRemovedEvent) {
                                 UserModel.UserRemovedEvent dEvent = (UserModel.UserRemovedEvent) event;
-                                System.out.println("Got delete event, going to delete this user");
-                                System.out.println(dEvent.getUser().getEmail());
                                 try {
                                     ObjectMapper mapper = new ObjectMapper();
                                     DetailDeletedUser duser = new DetailDeletedUser(dEvent);
                                     byte[] userObj = mapper.writeValueAsBytes(duser);
-                                    //byte[] userObj = mapper.writeValueAsBytes(dEvent.getUser());
                                     channel.basicPublish("", "scimbridge", null, "Publishing delete event below".getBytes());
                                     channel.basicPublish("", "scimbridge", null, userObj);
                                 } catch (IOException e) {
                                     // TODO Auto-generated catch block
                                     e.printStackTrace();
                                 }
-                                Map<String, List<String>> attributes = dEvent.getUser().getAttributes();
-                                for (Map.Entry<String, List<String>> entry : attributes.entrySet()) {
-                                    System.out.println("Key = " + entry.getKey());
-                                    for (String val : entry.getValue()) {
-                                        System.out.println(val);
-                                    }
-                                }
-                                System.out.println("Done logging info about user!");
-                                // TODO YOUR LOGIC WITH `dEvent.getUser()`
                             }
                     });
     }

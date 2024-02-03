@@ -10,6 +10,7 @@ import time
 from pubsub import pub
 from oauthlib.oauth2 import BackendApplicationClient
 from requests_oauthlib import OAuth2Session
+import pika
 
 def process_event(event):
     client_id = os.environ.get('CLIENT_ID')
@@ -178,6 +179,21 @@ def create_group_via_scim(group,kc_client):
         resp
     
 
+def read_mqueue():
+    rmqpwd = os.environ.get('RABBITMQPWD')
+    rmquname = os.environ.get('RABBITMQUNAME')
+    rmqvhost = os.environ.get('RABBITMQVHOST')
+    creds = pika.PlainCredentials(rmquname,rmqpwd)
+    params = pika.ConnectionParameters(virtual_host=rmqvhost,credentials=creds,host='localhost')
+    connection = pika.BlockingConnection(parameters=params)
+    channel = connection.channel()
+    channel.queue_declare(queue='scimbridge')
+    channel.basic_consume(queue='scimbridge',auto_ack=True,on_message_callback=callback)
+    channel.start_consuming()
+    
+
+def callback(channel,method,properties,body):
+    print(f"Got {body}")
 def read_journald_logs(since=None, until=None, unit=None):
     # Read log entries from journald that are created by keycloak. 
     # This code assumes the logs are written to journald in json format
@@ -215,4 +231,4 @@ def read_journald_logs(since=None, until=None, unit=None):
                         print(err.doc)
                         continue
 
-read_journald_logs()
+#read_journald_logs()

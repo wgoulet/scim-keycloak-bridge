@@ -30,6 +30,21 @@ def messagerecv():
     
 
 def callback(channel,method,properties,body):
-    print(f"Got {body}")
+    # decode into json objects
+    try:
+        body
+        devent = json.loads(body.decode("utf-8"))
+        if('opType' in devent): # we were sent a non delete op
+            op = devent['opType']
+            representation = json.loads(devent['representation'])
+            print(op)
+            print(representation)
+        else: # we were sent a delete
+            username = devent['userName']
+            attributes = devent['attributes']
+            print(username)
+            print(attributes)
+    except:
+        True
     
 messagerecv()

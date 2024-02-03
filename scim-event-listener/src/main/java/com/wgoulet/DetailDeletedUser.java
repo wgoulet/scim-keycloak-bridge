@@ -6,6 +6,11 @@ import java.util.List;
 
 public class DetailDeletedUser {
     private UserModel.UserRemovedEvent dEvent;
+    private static final String opType = "DELETE";
+    public static String getOptype() {
+        return opType;
+    }
+
     public DetailDeletedUser() {
     }
 
