@@ -19,17 +19,15 @@ def process_event(event):
     client = BackendApplicationClient(client_id=client_id)
     kcclient = OAuth2Session(client=client)
     token = kcclient.fetch_token(token_url=token_url,client_id=client_id,client_secret=client_secret)
-    if((event['operationType'] == 'CREATE') and (event['resourceType']) == 'GROUP'):
-        resp = kcclient.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/{event['resourcePath']}")
-        create_group_via_scim(group=resp.json(),kc_client=kcclient)
-    elif((event['operationType'] == 'CREATE') and (event['resourceType']) == 'GROUP_MEMBERSHIP'):
+    if((event['opType'] == 'CREATE') and (event['resourceType']) == 'GROUP'):
+        create_group_via_scim(group=json.loads(event['representation']),kc_client=kcclient)
+    elif((event['opType'] == 'CREATE') and (event['resourceType']) == 'GROUP_MEMBERSHIP'):
         assign_user_to_group_via_scim(event=event,kc_client=kcclient)
-    if(((event['operationType'] == 'UPDATE') or (event['operationType'] == 'CREATE')) and (event['resourceType'] == 'USER')):
+    if(((event['opType'] == 'UPDATE') or (event['opType'] == 'CREATE')) and (event['resourceType'] == 'USER')):
         # only time we will consider creating the user via SCIM is if we see that an attribute
         # has been set for them. If user is created with attributes in one operation via API
         # we'll handle that as well as if the user is created then attributes added later
-        resp = kcclient.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/{event['resourcePath']}")
-        check_create_update_user_via_scim(user=resp.json(),kc_client=kcclient)
+        check_create_update_user_via_scim(user=json.loads(event['representation']),kc_client=kcclient)
 
 def check_create_update_user_via_scim(user,kc_client):
     # create SCIM compliant user object in AWS IAM ID center if user has appropriate attribute
@@ -194,41 +192,28 @@ def read_mqueue():
 
 def callback(channel,method,properties,body):
     print(f"Got {body}")
-def read_journald_logs(since=None, until=None, unit=None):
-    # Read log entries from journald that are created by keycloak. 
-    # This code assumes the logs are written to journald in json format
-    reader = journal.Reader()
-    reader.seek_tail()
-    # Poll for events; whenver we get notified that new journald entries have
-    # been created, look for entries from keycloak that are generated for admin events
-    # and convert them into objects that we can feed into a SCIM client.
-    poller = select.poll()
-    poller.register(reader,reader.get_events())
-    while(True):
-        poller.poll()
-        for entry in reader:
-            if('SYSLOG_IDENTIFIER' in entry.keys()):
-                if entry['SYSLOG_IDENTIFIER'] == 'kc.sh':
-                    try:
-                        obj = json.loads(entry['MESSAGE'])
-                        if(obj['loggerName'] == 'org.keycloak.events'):
-                            # The fields of interest we need to generate scim events
-                            # are encoded as a list of key/value pairs with event details
-                            # so we'll read them in and convert them into json objects to make
-                            # it easier to extract the fields we'll need to generate SCIM
-                            # requests.
-                            with StringIO(obj['message']) as input_file:
-                                csv_reader = csv.reader(input_file, delimiter=",", quotechar='"')
-                                for row in csv_reader:
-                                    logobject = {}
-                                    for entry in row:
-                                        (key,value) = entry.split('=')
-                                        logobject[key.strip()] = value.strip()
-                                if('operationType' in logobject.keys()):
-                                    process_event(logobject)
-                    except json.decoder.JSONDecodeError as err:
-                        print("Not in json format")
-                        print(err.doc)
-                        continue
-
-#read_journald_logs()
+    # decode into json objects
+    try:
+        body
+        devent = json.loads(body.decode("utf-8"))
+        if('opType' in devent): 
+            if(devent['opType'] != 'DELETE'):
+                op = devent['opType']
+                representation = json.loads(devent['representation'])
+                print(op)
+                print(representation)
+                process_event(devent)
+            else: 
+                username = devent['userName']
+                attributes = devent['attributes']
+                op = devent['opType']
+                userId = devent['userId']
+                print(op)
+                print(username)
+                print(userId)
+                print(attributes)
+                process_event(devent)
+    except:
+        print(f"Error processing {body}")
+    
+read_mqueue()
