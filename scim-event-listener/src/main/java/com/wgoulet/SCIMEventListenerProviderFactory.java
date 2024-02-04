@@ -3,6 +3,7 @@ package com.wgoulet;
 import org.keycloak.Config;
 import org.keycloak.events.EventListenerProvider;
 import org.keycloak.events.EventListenerProviderFactory;
+import org.keycloak.models.GroupModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.UserModel;
@@ -55,6 +56,18 @@ public class SCIMEventListenerProviderFactory implements EventListenerProviderFa
                                     DetailDeletedUser duser = new DetailDeletedUser(dEvent);
                                     byte[] userObj = mapper.writeValueAsBytes(duser);
                                     channel.basicPublish("", "scimbridge", null, userObj);
+                                } catch (IOException e) {
+                                    // TODO Auto-generated catch block
+                                    e.printStackTrace();
+                                }
+                            }
+                            else if(event instanceof GroupModel.GroupRemovedEvent) {
+                                GroupModel.GroupRemovedEvent dEvent = (GroupModel.GroupRemovedEvent) event;
+                                try {
+                                    ObjectMapper mapper = new ObjectMapper();
+                                    DetailDeletedGroup dgroup = new DetailDeletedGroup(dEvent);
+                                    byte[] groupObj = mapper.writeValueAsBytes(dgroup);
+                                    channel.basicPublish("", "scimbridge", null, groupObj);
                                 } catch (IOException e) {
                                     // TODO Auto-generated catch block
                                     e.printStackTrace();

@@ -28,6 +28,9 @@ def process_event(event):
         # has been set for them. If user is created with attributes in one operation via API
         # we'll handle that as well as if the user is created then attributes added later
         check_create_update_user_via_scim(user=json.loads(event['representation']),kc_client=kcclient)
+    if((event['opType']) == 'DELETE' and (event['resourceType'] == 'GROUP')):
+        event
+        True
 
 def check_create_update_user_via_scim(user,kc_client):
     # create SCIM compliant user object in AWS IAM ID center if user has appropriate attribute
@@ -197,22 +200,8 @@ def callback(channel,method,properties,body):
         body
         devent = json.loads(body.decode("utf-8"))
         if('opType' in devent): 
-            if(devent['opType'] != 'DELETE'):
-                op = devent['opType']
-                representation = json.loads(devent['representation'])
-                print(op)
-                print(representation)
-                process_event(devent)
-            else: 
-                username = devent['userName']
-                attributes = devent['attributes']
-                op = devent['opType']
-                userId = devent['userId']
-                print(op)
-                print(username)
-                print(userId)
-                print(attributes)
-                process_event(devent)
+            op = devent['opType']
+            process_event(devent)
     except:
         print(f"Error processing {body}")
     
