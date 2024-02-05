@@ -19,8 +19,8 @@ def process_event(event):
     client = BackendApplicationClient(client_id=client_id)
     kcclient = OAuth2Session(client=client)
     token = kcclient.fetch_token(token_url=token_url,client_id=client_id,client_secret=client_secret)
-    if((event['opType'] == 'CREATE') and (event['resourceType']) == 'GROUP'):
-        create_group_via_scim(group=json.loads(event['representation']),kc_client=kcclient)
+    if(((event['opType'] == 'CREATE') or (event['opType'] == 'UPDATE')) and (event['resourceType']) == 'GROUP'):
+        check_create_update_group_via_scim(optype=event['opType'],group=json.loads(event['representation']),kc_client=kcclient)
     elif((event['opType'] == 'CREATE') and (event['resourceType']) == 'GROUP_MEMBERSHIP'):
         assign_user_to_group_via_scim(event=event,kc_client=kcclient)
     if(((event['opType'] == 'UPDATE') or (event['opType'] == 'CREATE')) and (event['resourceType'] == 'USER')):
@@ -29,8 +29,27 @@ def process_event(event):
         # we'll handle that as well as if the user is created then attributes added later
         check_create_update_user_via_scim(user=json.loads(event['representation']),kc_client=kcclient)
     if((event['opType']) == 'DELETE' and (event['resourceType'] == 'GROUP')):
-        event
+        group_obj = {}
+        group_obj['id'] = event['id']
+        group_obj['attributes'] = event['attributes']
+        delete_group_via_scim(groupobj=group_obj,kc_client=kcclient)
         True
+
+def delete_group_via_scim(groupobj,kc_client):
+    client_id=os.environ.get('SCIM_TOKEN_CLIENT_ID')
+    scim_access_token=os.environ.get('SCIM_ACCESS_TOKEN')
+    scim_endpoint=os.environ.get('SCIM_ENDPOINT')
+    client = BackendApplicationClient(client_id=client_id)
+    scimsession = OAuth2Session(client=client)
+    scimsession.access_token=scim_access_token
+    scimsession.token=scim_access_token
+    # Check if group contains an awsid first; if so use it to 
+    # delete the group
+    if('awsid' in groupobj['attributes']):
+        awsid = groupobj['attributes']['awsid'][0]
+        resp = scimsession.delete(f"{scim_endpoint}Groups/{'awsid'}")
+        resp.json()
+
 
 def check_create_update_user_via_scim(user,kc_client):
     # create SCIM compliant user object in AWS IAM ID center if user has appropriate attribute
@@ -90,6 +109,7 @@ def check_create_update_user_via_scim(user,kc_client):
                             'attributes': attributes
                         }
                 resp = kc_client.put(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{user['id']}",json=userattr)
+                resp
             else:
                 pprint.pprint(resp.json())
                 # Store the AWS ID value as an attribute for the user; we'll need this
@@ -99,6 +119,7 @@ def check_create_update_user_via_scim(user,kc_client):
                     'attributes': attributes
                 }
                 resp = kc_client.put(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{user['id']}",json=userattr)
+                resp
     elif('awsid' in attributes): 
         if(('awsenabled' not in attributes) or (attributes['awsenabled'][0] != 'true')):
             # remove the user from AWS via scim
@@ -150,14 +171,24 @@ def assign_user_to_group_via_scim(event,kc_client):
     resp = scimsession.patch(f"{scim_endpoint}Groups/{groupinfo['attributes']['awsid'][0]}",json=patchop)
     resp
     
-def create_group_via_scim(group,kc_client):
-        # create SCIM compliant group object
+def check_create_update_group_via_scim(optype,group,kc_client):
+        # create SCIM compliant group object if we have the awsenabled attribute
+        # set on the group.
         # per AWS SCIM docs, The displayName fields are required.
-
+        if('awsenabled' not in group['attributes']):
+            return
+        elif(group['attributes']['awsenabled'][0] != 'true'):
+            return
+        # To avoid an infinite loop, if we see that the group in question already
+        # has an AWS ID, we know it has been provisioned so stop. Otherwise we'll
+        # keep updating the group here, triggering an update event and firing this event
+        # again
+        elif('awsid' in group['attributes']):
+            return
         groupobj = {}
         groupobj['externalId'] = group['id']
         groupobj['displayName'] = group['name']
-
+        attributes = group['attributes']
         client_id=os.environ.get('SCIM_TOKEN_CLIENT_ID')
         scim_access_token=os.environ.get('SCIM_ACCESS_TOKEN')
         scim_endpoint=os.environ.get('SCIM_ENDPOINT')
@@ -167,18 +198,27 @@ def create_group_via_scim(group,kc_client):
         scimsession.token=scim_access_token
         resp = scimsession.post(f"{scim_endpoint}Groups",json=groupobj)
         awsgroupobj = resp.json()
-        pprint.pprint(resp.json())
-        # Store the AWS ID value as an attribute for the user; we'll need this
-        # to find the user in AWS IAM ID center later for update operations
-        groupattr = {
-            'name':group['name'],
-            'attributes':{
-                "awsid":[awsgroupobj['id']]
-            } 
-        }
-        resp = kc_client.put(f"https://keycloak.wgoulet.com/admin/realms/Infra/groups/{group['id']}",json=groupattr)
-        resp
-    
+        if(('status' in awsgroupobj.keys()) and (awsgroupobj['status'] == '409')):
+            filterexpr = f"filter=externalId eq \"{groupobj['externalId']}\""
+            resp = scimsession.get(f"{scim_endpoint}Groups?{filterexpr}")
+            result = resp.json()
+            if(result['totalResults'] > 0):
+                for resource in result['Resources']:
+                    resp = scimsession.get(f"{scim_endpoint}Groups/{resource['id']}")
+                    tmpgroupobj = resp.json()
+                    # Store the AWS ID value as an attribute for the group; we'll need this
+                    # to find the group in AWS IAM ID center later for update operations
+                    attributes['awsid'] = [tmpgroupobj['id']]
+                group['attributes'] = attributes
+                resp = kc_client.put(f"https://keycloak.wgoulet.com/admin/realms/Infra/groups/{group['id']}",json=group)
+                resp
+        else:
+            pprint.pprint(resp.json())
+            awsgroupobj = resp.json()
+            attributes['awsid'] = [awsgroupobj['id']]
+            group['attributes'] = attributes
+            resp = kc_client.put(f"https://keycloak.wgoulet.com/admin/realms/Infra/groups/{group['id']}",json=group)
+            resp
 
 def read_mqueue():
     rmqpwd = os.environ.get('RABBITMQPWD')
@@ -202,7 +242,7 @@ def callback(channel,method,properties,body):
         if('opType' in devent): 
             op = devent['opType']
             process_event(devent)
-    except:
-        print(f"Error processing {body}")
+    except Exception as err:
+        print(f"Exception {err} when processing {body}")
     
 read_mqueue()
