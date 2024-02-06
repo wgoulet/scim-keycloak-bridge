@@ -41,8 +41,6 @@ def test_check_create_update_group_via_scim(setup_connections):
     kc_client = connections['kc_client']
     scim_client = connections['scim_client']
     scim_endpoint = connections['scim_endpoint']
-    resp = kc_client.get("https://keycloak.wgoulet.com/admin/realms/Infra/users")
-    assert resp.status_code == 200
     # Create a group in KC
     groupobj = {}
     groupobj['name'] = "pytestgroup"
@@ -71,15 +69,39 @@ def test_check_create_update_group_via_scim(setup_connections):
 
 def test_delete_user_via_scim(setup_connections):
     connections = setup_connections
+    kc_client = connections['kc_client']
     scim_client = connections['scim_client']
     scim_endpoint = connections['scim_endpoint']
-    resp = scim_client.get(f"{scim_endpoint}Users")
+    userobj = {}
+    userobj['username'] = "pytest@test.com"
+    userobj['email'] = "pytest@test.com"
+    userobj['firstName'] = "py"
+    userobj['lastName'] = "test"
+    attributes = {"awsenabled":["true"]}
+    userobj['attributes'] = attributes
+    resp = kc_client.post("https://keycloak.wgoulet.com/admin/realms/Infra/users",json=userobj)
+    resp
+    # Fetch full user details to send to SCIM method
+    resp = kc_client.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/users?search={userobj['username']}&briefRepresentation=false")
+    userobj = resp.json()
+    # Provision user
+    userobj
+    scim_client_kc_aws.check_create_update_user_via_scim(user=userobj[0],kc_client=kc_client)
+
+    # Make sure user is actually provisioned
+    resp = kc_client.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{userobj[0]['id']}")
+    awsid = resp.json()['attributes']['awsid'][0]
+    resp = scim_client.get(f"{scim_endpoint}Users/{awsid}")
     assert resp.status_code == 200
+    assert resp.json()['displayName'] == "pytest@test.com" 
     
-    # Set the attributes needed to trigger group creation
-    
-    # Verify that group was created
-    
-    # Delete test group
-    
-    
+    # Delete user in SCIM
+    resp = scim_client_kc_aws.delete_user_via_scim(userobj=userobj[0],kc_client=kc_client)
+
+    # Verify user no longer found in AWS
+    resp = scim_client.get(f"{scim_endpoint}Users/{awsid}")
+    assert resp.status_code == 404
+
+    # delete user in KC
+    resp = kc_client.delete(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{userobj[0]['id']}")
+    assert resp.status_code == 204

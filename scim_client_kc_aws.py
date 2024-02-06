@@ -69,9 +69,8 @@ def delete_user_via_scim(userobj,kc_client):
     # Check if user contains an awsid first; if so use it to 
     # delete the user
     if('awsid' in userobj['attributes']):
-        awsid = userobj['attributes']['awsid'][0]
+        awsid = userobj['attributes']['awsid']
         resp = scimsession.delete(f"{scim_endpoint}Users/{awsid}")
-        resp.json()
 
 
 def check_create_update_user_via_scim(user,kc_client):
