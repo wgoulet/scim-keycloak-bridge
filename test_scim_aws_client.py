@@ -67,6 +67,42 @@ def test_check_create_update_group_via_scim(setup_connections):
     resp = kc_client.delete(f"https://keycloak.wgoulet.com/admin/realms/Infra/groups/{groupobj[0]['id']}")
     assert resp.status_code == 204
 
+def test_delete_group_via_scim(setup_connections):
+    connections = setup_connections
+    kc_client = connections['kc_client']
+    scim_client = connections['scim_client']
+    scim_endpoint = connections['scim_endpoint']
+    groupobj = {}
+    groupobj['name'] = "pytest"
+    attributes = {"awsenabled":["true"]}
+    groupobj['attributes'] = attributes
+    resp = kc_client.post("https://keycloak.wgoulet.com/admin/realms/Infra/groups",json=groupobj)
+    resp
+    # Fetch full group details to send to SCIM method
+    resp = kc_client.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/groups?search={groupobj['name']}&briefRepresentation=false")
+    groupobj = resp.json()
+    # Provision group
+    groupobj
+    scim_client_kc_aws.check_create_update_group_via_scim(optype='CREATE',group=groupobj[0],kc_client=kc_client)
+
+    # Make sure group is actually provisioned
+    resp = kc_client.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/groups/{groupobj[0]['id']}")
+    awsid = resp.json()['attributes']['awsid'][0]
+    resp = scim_client.get(f"{scim_endpoint}Groups/{awsid}")
+    assert resp.status_code == 200
+    assert resp.json()['displayName'] == "pytest" 
+    
+    # Delete group in SCIM
+    resp = scim_client_kc_aws.delete_group_via_scim(groupobj=groupobj[0],kc_client=kc_client)
+
+    # Verify group no longer found in AWS
+    resp = scim_client.get(f"{scim_endpoint}Groups/{awsid}")
+    assert resp.status_code == 404
+
+    # delete group in KC
+    resp = kc_client.delete(f"https://keycloak.wgoulet.com/admin/realms/Infra/groups/{groupobj[0]['id']}")
+    assert resp.status_code == 204
+
 def test_delete_user_via_scim(setup_connections):
     connections = setup_connections
     kc_client = connections['kc_client']

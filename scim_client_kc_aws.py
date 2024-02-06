@@ -56,7 +56,6 @@ def delete_group_via_scim(groupobj,kc_client):
     if('awsid' in groupobj['attributes']):
         awsid = groupobj['attributes']['awsid'][0]
         resp = scimsession.delete(f"{scim_endpoint}Groups/{awsid}")
-        resp.json()
 
 def delete_user_via_scim(userobj,kc_client):
     client_id=os.environ.get('SCIM_TOKEN_CLIENT_ID')
