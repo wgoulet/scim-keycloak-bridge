@@ -36,20 +36,38 @@ def setup_connections():
     connections = {"kc_client":kcclient,"scim_client":scimsession,"scim_endpoint":scim_endpoint}
     return connections
 
-def test_one_and_one_is_2():
-    assert 1 + 1 == 2
-    
-def test_testing_test_framework():
-    assert scim_client_kc_aws.testing_test_framework(1,1) == 2
-    assert scim_client_kc_aws.testing_test_framework(1,2) == 3
-    assert scim_client_kc_aws.testing_test_framework(2,2) == 4
-
-def test_delete_group_via_scim(setup_connections):
+def test_check_create_update_group_via_scim(setup_connections):
     connections = setup_connections
     kc_client = connections['kc_client']
+    scim_client = connections['scim_client']
+    scim_endpoint = connections['scim_endpoint']
     resp = kc_client.get("https://keycloak.wgoulet.com/admin/realms/Infra/users")
     assert resp.status_code == 200
     # Create a group in KC
+    groupobj = {}
+    groupobj['name'] = "pytestgroup"
+    attributes = {"awsenabled":["true"]}
+    groupobj['attributes'] = attributes
+    resp = kc_client.post("https://keycloak.wgoulet.com/admin/realms/Infra/groups",json=groupobj)
+    # Fetch full group details to send to SCIM method
+    resp = kc_client.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/groups?search={groupobj['name']}&briefRepresentation=false")
+    groupobj = resp.json()
+    # Provision group
+    scim_client_kc_aws.check_create_update_group_via_scim(optype="CREATE",group=groupobj[0],kc_client=kc_client)
+    
+    # Make sure group is actually provisioned
+    # we'll do this by using the AWS ID that stored on the group object to fetch the group from AWS SCIM
+    resp = kc_client.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/groups/{groupobj[0]['id']}")
+    awsid = resp.json()['attributes']['awsid'][0]
+    resp = scim_client.get(f"{scim_endpoint}Groups/{awsid}")
+    assert resp.status_code == 200
+    assert resp.json()['displayName'] == "pytestgroup"
+
+    # Delete group from AWS then KC
+    resp = scim_client.delete(f"{scim_endpoint}Groups/{awsid}")
+    assert resp.status_code == 204
+    resp = kc_client.delete(f"https://keycloak.wgoulet.com/admin/realms/Infra/groups/{groupobj[0]['id']}")
+    assert resp.status_code == 204
 
 def test_delete_user_via_scim(setup_connections):
     connections = setup_connections
