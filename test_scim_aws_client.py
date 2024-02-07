@@ -141,3 +141,143 @@ def test_delete_user_via_scim(setup_connections):
     # delete user in KC
     resp = kc_client.delete(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{userobj[0]['id']}")
     assert resp.status_code == 204
+    
+def test_check_create_update_user_via_scim(setup_connections):
+    connections = setup_connections
+    kc_client = connections['kc_client']
+    scim_client = connections['scim_client']
+    scim_endpoint = connections['scim_endpoint']
+    userobj = {}
+    userobj['username'] = "pytest@test.com"
+    userobj['email'] = "pytest@test.com"
+    userobj['firstName'] = "py"
+    userobj['lastName'] = "test"
+    attributes = {"awsenabled":["true"]}
+    userobj['attributes'] = attributes
+    resp = kc_client.post("https://keycloak.wgoulet.com/admin/realms/Infra/users",json=userobj)
+    resp
+    # Fetch full user details to send to SCIM method
+    resp = kc_client.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/users?search={userobj['username']}&briefRepresentation=false")
+    userobj = resp.json()
+    # Provision user
+    userobj
+    scim_client_kc_aws.check_create_update_user_via_scim(user=userobj[0],kc_client=kc_client)
+
+    # Make sure user is actually provisioned
+    resp = kc_client.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{userobj[0]['id']}")
+    awsid = resp.json()['attributes']['awsid'][0]
+    resp = scim_client.get(f"{scim_endpoint}Users/{awsid}")
+    assert resp.status_code == 200
+    assert resp.json()['displayName'] == "pytest@test.com" 
+    
+    # Delete user in SCIM
+    resp = scim_client_kc_aws.delete_user_via_scim(userobj=userobj[0],kc_client=kc_client)
+
+    # Verify user no longer found in AWS
+    resp = scim_client.get(f"{scim_endpoint}Users/{awsid}")
+    assert resp.status_code == 404
+
+    # delete user in KC
+    resp = kc_client.delete(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{userobj[0]['id']}")
+    assert resp.status_code == 204
+    
+    # test user without AWS attributes is NOT provisioned
+    userobj = {}
+    userobj['username'] = "pytest@test.com"
+    userobj['email'] = "pytest@test.com"
+    userobj['firstName'] = "py"
+    userobj['lastName'] = "test"
+    attributes = {"awsenabled":["false"]}
+    userobj['attributes'] = attributes
+    resp = kc_client.post("https://keycloak.wgoulet.com/admin/realms/Infra/users",json=userobj)
+    resp
+    # Fetch full user details to send to SCIM method
+    resp = kc_client.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/users?search={userobj['username']}&briefRepresentation=false")
+    userobj = resp.json()
+    # Attempt to provision user
+    userobj
+    scim_client_kc_aws.check_create_update_user_via_scim(user=userobj[0],kc_client=kc_client)
+
+    # Make sure user is NOT provisioned since we didn't have awsenabled attribute set 
+    resp = kc_client.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{userobj[0]['id']}")
+    assert 'awsid' not in resp.json()['attributes']
+    
+    # delete user in KC
+    resp = kc_client.delete(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{userobj[0]['id']}")
+    assert resp.status_code == 204
+    
+def test_assign_user_to_group(setup_connections):
+    "users/45ceba17-4d43-4d1b-8a8b-7aed5f527a45/groups/e7ef8103-aadc-498b-8dc5-e12c5ee25120"
+    '{"id":"e7ef8103-aadc-498b-8dc5-e12c5ee25120","name":"AWSUsers","path":"/AWSUsers","attributes":{"awsid":["94f8f458-9031-7070-361a-7547987864e2"],"awsenabled":["true"]}}'
+
+    connections = setup_connections
+    kc_client = connections['kc_client']
+    scim_client = connections['scim_client']
+    scim_endpoint = connections['scim_endpoint']
+    
+    # Create group for test
+    groupobj = {}
+    groupobj['name'] = "pytest"
+    attributes = {"awsenabled":["true"]}
+    groupobj['attributes'] = attributes
+    resp = kc_client.post("https://keycloak.wgoulet.com/admin/realms/Infra/groups",json=groupobj)
+    resp
+    # Fetch full group details to send to SCIM method
+    resp = kc_client.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/groups?search={groupobj['name']}&briefRepresentation=false")
+    groupobj = resp.json()
+    # Provision group
+    groupobj
+    scim_client_kc_aws.check_create_update_group_via_scim(optype='CREATE',group=groupobj[0],kc_client=kc_client)
+
+    # Make sure group is actually provisioned
+    resp = kc_client.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/groups/{groupobj[0]['id']}")
+    awsid = resp.json()['attributes']['awsid'][0]
+    resp = scim_client.get(f"{scim_endpoint}Groups/{awsid}")
+    assert resp.status_code == 200
+    assert resp.json()['displayName'] == "pytest"
+    
+    # Create user for test
+    
+    userobj = {}
+    userobj['username'] = "pytest@test.com"
+    userobj['email'] = "pytest@test.com"
+    userobj['firstName'] = "py"
+    userobj['lastName'] = "test"
+    attributes = {"awsenabled":["true"]}
+    userobj['attributes'] = attributes
+    resp = kc_client.post("https://keycloak.wgoulet.com/admin/realms/Infra/users",json=userobj)
+    resp
+    # Fetch full user details to send to SCIM method
+    resp = kc_client.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/users?search={userobj['username']}&briefRepresentation=false")
+    userobj = resp.json()
+    # Provision user
+    userobj
+    scim_client_kc_aws.check_create_update_user_via_scim(user=userobj[0],kc_client=kc_client)
+
+    # Make sure user is actually provisioned
+    resp = kc_client.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{userobj[0]['id']}")
+    awsid = resp.json()['attributes']['awsid'][0]
+    resp = scim_client.get(f"{scim_endpoint}Users/{awsid}")
+    assert resp.status_code == 200
+    assert resp.json()['displayName'] == "pytest@test.com" 
+
+    # Assign user to group in KC
+    
+    # We won't be capturing an event from Keycloak here so we'll create a fake event
+
+    # Fetch full group details to send to SCIM method
+    resp = kc_client.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/groups?search={groupobj[0]['name']}&briefRepresentation=false")
+    groupobj = resp.json()
+
+    event = {}
+    event['opType'] = 'CREATE' 
+    event['resourceType'] = 'GROUP_MEMBERSHIP'
+    event['representation'] = groupobj[0]
+    event['resourcePath'] = f"users/{userobj[0]['id']}/groups/{groupobj[0]['id']}"
+    
+    # Assign user to group
+    scim_client_kc_aws.assign_user_to_group_via_scim(event=event,kc_client=kc_client)
+    
+    # Check to see if user is assigned to group in AWS
+    resp = scim_client.get(f"{scim_endpoint}Groups/{groupobj[0]['attributes']['awsid'][0]}")
+    assert resp.status_code == 404
