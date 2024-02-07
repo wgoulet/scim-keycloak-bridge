@@ -9,6 +9,7 @@ import org.keycloak.events.EventListenerProvider;
 import org.keycloak.events.EventType;
 import org.keycloak.events.admin.AdminEvent;
 import org.keycloak.events.admin.OperationType;
+import org.keycloak.events.admin.ResourceType;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmProvider;
 import org.keycloak.models.UserModel;
@@ -59,14 +60,16 @@ public class SCIMEventListenerProvider implements EventListenerProvider {
             ObjectMapper mapper = new ObjectMapper();
             String sendString = mapper.writeValueAsString(dEvent.getEventRepresentation());
             // We won't log delete events here because we don't have any context
-            // about the user to provide. Deletions are handled in the provider factory
+            // about the user/group to provide. Deletions are handled in the provider factory
             // instead.
             if(adminEvent.getOperationType() != OperationType.DELETE) {
                 channel.basicPublish("", "scimbridge", null,sendString.getBytes());
             }
-            System.out.println("About to log event!");
-            System.out.println(adminEvent.getRepresentation());
-            System.out.println("Event logged!!");
+            // On the other hand, group membership leave events are standard AdminEvents so send those along
+            if((adminEvent.getResourceType() == ResourceType.GROUP_MEMBERSHIP) && 
+                (adminEvent.getOperationType() == OperationType.DELETE)){
+                channel.basicPublish("", "scimbridge", null,sendString.getBytes());
+            }
         } catch (IOException e) {
             // TODO Auto-generated catch block
             System.out.println("Fatal error!");

@@ -25,8 +25,9 @@ def process_event(event):
     token = kcclient.fetch_token(token_url=token_url,client_id=client_id,client_secret=client_secret)
     if(((event['opType'] == 'CREATE') or (event['opType'] == 'UPDATE')) and (event['resourceType']) == 'GROUP'):
         check_create_update_group_via_scim(optype=event['opType'],group=json.loads(event['representation']),kc_client=kcclient)
-    elif((event['opType'] == 'CREATE') and (event['resourceType']) == 'GROUP_MEMBERSHIP'):
-        assign_user_to_group_via_scim(event=event,kc_client=kcclient)
+    #elif((event['opType'] == 'CREATE') and (event['resourceType']) == 'GROUP_MEMBERSHIP'):
+    elif((event['resourceType']) == 'GROUP_MEMBERSHIP'):
+        update_user_group_rel_via_scim(event=event,kc_client=kcclient)
     if(((event['opType'] == 'UPDATE') or (event['opType'] == 'CREATE')) and (event['resourceType'] == 'USER')):
         # only time we will consider creating the user via SCIM is if we see that an attribute
         # has been set for them. If user is created with attributes in one operation via API
@@ -162,7 +163,7 @@ def check_create_update_user_via_scim(user,kc_client):
             pprint.pprint(f"User {user['id']} removed from AWS")
     
         
-def assign_user_to_group_via_scim(event,kc_client):
+def update_user_group_rel_via_scim(event,kc_client):
     client_id=os.environ.get('SCIM_TOKEN_CLIENT_ID')
     scim_access_token=os.environ.get('SCIM_ACCESS_TOKEN')
     scim_endpoint=os.environ.get('SCIM_ENDPOINT')
@@ -177,18 +178,32 @@ def assign_user_to_group_via_scim(event,kc_client):
     groupinfo = resp.json()
     userinfo
     groupinfo
-    patchop = {
-        'schemas':["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
-        'Operations':[
-            {
-                'op':'add',
-                'path':"members",
-                'value':[
-                    {'value':userinfo['attributes']['awsid'][0]}
-                ]
-            }
-        ]
-    }
+    if(event['opType'] == 'CREATE'):
+        patchop = {
+            'schemas':["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+            'Operations':[
+                {
+                    'op':'add',
+                    'path':"members",
+                    'value':[
+                        {'value':userinfo['attributes']['awsid'][0]}
+                    ]
+                }
+            ]
+        }
+    elif(event['opType'] == 'DELETE'):
+        patchop = {
+            'schemas':["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+            'Operations':[
+                {
+                    'op':'REMOVE',
+                    'path':"members",
+                    'value':[
+                        {'value':userinfo['attributes']['awsid'][0]}
+                    ]
+                }
+            ]
+        }
     resp = scimsession.patch(f"{scim_endpoint}Groups/{groupinfo['attributes']['awsid'][0]}",json=patchop)
     resp
     

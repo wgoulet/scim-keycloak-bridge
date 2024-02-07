@@ -206,7 +206,7 @@ def test_check_create_update_user_via_scim(setup_connections):
     resp = kc_client.delete(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{userobj[0]['id']}")
     assert resp.status_code == 204
     
-def test_assign_user_to_group(setup_connections):
+def test_update_user_group_rel_via_scim(setup_connections):
     "users/45ceba17-4d43-4d1b-8a8b-7aed5f527a45/groups/e7ef8103-aadc-498b-8dc5-e12c5ee25120"
     '{"id":"e7ef8103-aadc-498b-8dc5-e12c5ee25120","name":"AWSUsers","path":"/AWSUsers","attributes":{"awsid":["94f8f458-9031-7070-361a-7547987864e2"],"awsenabled":["true"]}}'
 
@@ -276,7 +276,7 @@ def test_assign_user_to_group(setup_connections):
     event['resourcePath'] = f"users/{userobj[0]['id']}/groups/{groupobj[0]['id']}"
     
     # Assign user to group
-    scim_client_kc_aws.assign_user_to_group_via_scim(event=event,kc_client=kc_client)
+    scim_client_kc_aws.update_user_group_rel_via_scim(event=event,kc_client=kc_client)
     
     # Check to see if user is assigned to group in AWS
     resp = scim_client.get(f"{scim_endpoint}Groups?filter=id eq \"{groupobj[0]['attributes']['awsid'][0]}\" and members eq \"{userobj[0]['attributes']['awsid']}\"")
@@ -289,6 +289,14 @@ def test_assign_user_to_group(setup_connections):
             found = True
     
     assert found == True
+
+    # Unassign user from group
+    event['opType'] = 'DELETE' 
+    scim_client_kc_aws.update_user_group_rel_via_scim(event=event,kc_client=kc_client)
+    # Verify user is not assigned to group in AWS
+    resp = scim_client.get(f"{scim_endpoint}Groups?filter=id eq \"{groupobj[0]['attributes']['awsid'][0]}\" and members eq \"{userobj[0]['attributes']['awsid']}\"")
+    assert resp.status_code == 200
+    assert resp.json()['totalResults'] == 0
     
     # Delete user and group
     resp = kc_client.delete(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{userobj[0]['id']}")
