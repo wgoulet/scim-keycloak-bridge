@@ -279,5 +279,23 @@ def test_assign_user_to_group(setup_connections):
     scim_client_kc_aws.assign_user_to_group_via_scim(event=event,kc_client=kc_client)
     
     # Check to see if user is assigned to group in AWS
-    resp = scim_client.get(f"{scim_endpoint}Groups/{groupobj[0]['attributes']['awsid'][0]}")
-    assert resp.status_code == 404
+    resp = scim_client.get(f"{scim_endpoint}Groups?filter=id eq \"{groupobj[0]['attributes']['awsid'][0]}\" and members eq \"{userobj[0]['attributes']['awsid']}\"")
+    assert resp.status_code == 200
+    awsresults = resp.json()
+    
+    found = False
+    for result in awsresults['Resources']:
+        if(result['displayName'] == 'pytest'):
+            found = True
+    
+    assert found == True
+    
+    # Delete user and group
+    resp = kc_client.delete(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{userobj[0]['id']}")
+    resp = kc_client.delete(f"https://keycloak.wgoulet.com/admin/realms/Infra/groups/{groupobj[0]['id']}")
+
+    # Delete user and group from AWS
+    resp = scim_client.delete(f"{scim_endpoint}Users/{userobj[0]['attributes']['awsid']}")
+    assert resp.status_code == 204
+    resp = scim_client.delete(f"{scim_endpoint}Groups/{groupobj[0]['attributes']['awsid'][0]}")
+    assert resp.status_code == 204
