@@ -13,9 +13,6 @@ from oauthlib.oauth2 import BackendApplicationClient
 from requests_oauthlib import OAuth2Session
 import pika
 
-def testing_test_framework(arg1,arg2):
-    return arg1 + arg2
-
 def process_event(event):
     client_id = os.environ.get('CLIENT_ID')
     client_secret = os.environ.get('CLIENT_SECRET')
@@ -81,6 +78,7 @@ def check_create_update_user_via_scim(user,kc_client):
         return
     else:
         pprint.pprint(f"provisioning user {user} via scim")
+    kc_base_url = os.environ.get('KC_BASE_URL')
     attributes = user['attributes']
     # we might be here because the user was just created then updated, or they might exist already
     # and the attributes assigning them to AWS were removed. If they don't have an AWS ID then they should be created
@@ -130,7 +128,7 @@ def check_create_update_user_via_scim(user,kc_client):
                         userattr = {
                             'attributes': attributes
                         }
-                resp = kc_client.put(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{user['id']}",json=userattr)
+                resp = kc_client.put(f"{kc_base_url}/admin/realms/Infra/users/{user['id']}",json=userattr)
                 resp
             else:
                 pprint.pprint(resp.json())
@@ -140,7 +138,7 @@ def check_create_update_user_via_scim(user,kc_client):
                 userattr = {
                     'attributes': attributes
                 }
-                resp = kc_client.put(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{user['id']}",json=userattr)
+                resp = kc_client.put(f"{kc_base_url}/admin/realms/Infra/users/{user['id']}",json=userattr)
                 resp
     elif('awsid' in attributes): 
         if(('awsenabled' not in attributes) or (attributes['awsenabled'][0] != 'true')):
@@ -159,11 +157,12 @@ def check_create_update_user_via_scim(user,kc_client):
             userattr = {
                 'attributes': attributes
             }
-            resp = kc_client.put(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{user['id']}",json=userattr)
+            resp = kc_client.put(f"{kc_base_url}/admin/realms/Infra/users/{user['id']}",json=userattr)
             pprint.pprint(f"User {user['id']} removed from AWS")
     
         
 def update_user_group_rel_via_scim(event,kc_client):
+    kc_base_url = os.environ.get('KC_BASE_URL')
     client_id=os.environ.get('SCIM_TOKEN_CLIENT_ID')
     scim_access_token=os.environ.get('SCIM_ACCESS_TOKEN')
     scim_endpoint=os.environ.get('SCIM_ENDPOINT')
@@ -172,9 +171,9 @@ def update_user_group_rel_via_scim(event,kc_client):
     scimsession.access_token=scim_access_token
     scimsession.token=scim_access_token
     (ulabel,userId,glabel,groupId) = event['resourcePath'].split('/')  
-    resp = kc_client.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/users/{userId}")
+    resp = kc_client.get(f"{kc_base_url}/admin/realms/Infra/users/{userId}")
     userinfo = resp.json()
-    resp = kc_client.get(f"https://keycloak.wgoulet.com/admin/realms/Infra/groups/{groupId}")
+    resp = kc_client.get(f"{kc_base_url}/admin/realms/Infra/groups/{groupId}")
     groupinfo = resp.json()
     userinfo
     groupinfo
@@ -225,6 +224,7 @@ def check_create_update_group_via_scim(optype,group,kc_client):
         groupobj['externalId'] = group['id']
         groupobj['displayName'] = group['name']
         attributes = group['attributes']
+        kc_base_url = os.environ.get('KC_BASE_URL')
         client_id=os.environ.get('SCIM_TOKEN_CLIENT_ID')
         scim_access_token=os.environ.get('SCIM_ACCESS_TOKEN')
         scim_endpoint=os.environ.get('SCIM_ENDPOINT')
@@ -246,14 +246,14 @@ def check_create_update_group_via_scim(optype,group,kc_client):
                     # to find the group in AWS IAM ID center later for update operations
                     attributes['awsid'] = [tmpgroupobj['id']]
                 group['attributes'] = attributes
-                resp = kc_client.put(f"https://keycloak.wgoulet.com/admin/realms/Infra/groups/{group['id']}",json=group)
+                resp = kc_client.put(f"{kc_base_url}/admin/realms/Infra/groups/{group['id']}",json=group)
                 resp
         else:
             pprint.pprint(resp.json())
             awsgroupobj = resp.json()
             attributes['awsid'] = [awsgroupobj['id']]
             group['attributes'] = attributes
-            resp = kc_client.put(f"https://keycloak.wgoulet.com/admin/realms/Infra/groups/{group['id']}",json=group)
+            resp = kc_client.put(f"{kc_base_url}/admin/realms/Infra/groups/{group['id']}",json=group)
             resp
 
 def main():
