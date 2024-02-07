@@ -25,6 +25,21 @@ This architecture was designed to decouple application logic from the EventListe
 
 * TODO:
 
+
+### Usage
+
+The SCIM client uses attributes associated with users and groups to determine if it should take action (provision/deprovision/change user/groups). To set a user or group up to be provisioned in AWS, add this attribute to the user/group in Keycloak:
+```
+awsenabled
+```
+
+and give it a value of 'true'. When the SCIM client receives an event from the SCIM Event Listener, it will check if this attribute is present and if it is, will create the usr/group in AWS and store the AWS ID for the user/group in a new attribute called 'awsid'.
+
+Supported operations include:
+- Removing user/groups from AWS by deleting the 'awsenabled' attribute
+- Adding/removing AWS provisioned users from AWS provisioned groups
+- Automatically removing users/groups provisioned to AWS when the users/groups are deleted from Keycloak.
+
 ### Executing program
 
 * Create a virtualenv for the program
