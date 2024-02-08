@@ -1,0 +1,12 @@
+TOKEN_URL=https://keycloak.example.com/realms/Infra/protocol/openid-connect/token
+CLIENT_SECRET=xxxxx
+CLIENT_ID=xxxxxx
+SCIM_ENDPOINT=https://scim.us-east-1.amazonaws.com/xxxxx/scim/v2/
+SCIM_TOKEN_CLIENT_ID=xxxx
+SCIM_ACCESS_TOKEN=xxxxx
+RABBITMQPWD=xxxxxx
+RABBITMQUNAME=scimbridge
+RABBITMQVHOST=scimbridge
+RABBITMQHOST=localhost
+KC_BASE_URL=https://keycloak.example.com
+KC_TEST_URL=https://keycloak.example.com/admin/realms/ExampleRealm

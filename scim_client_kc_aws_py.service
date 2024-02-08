@@ -1,0 +1,34 @@
+# systemd unit file for the SCIM Client for Keycloak and AWS service
+
+
+[Unit]
+
+# Human readable name of the unit
+Description=SCIM Client for Keycloak and AWS service
+
+
+[Service]
+
+# Command to execute when the service is started
+ExecStart=/path/to/virtualenv/bin/python /path/to/repo/scim_client_kc_aws.py
+
+# Disable Python's buffering of STDOUT and STDERR, so that output from the
+# service shows up immediately in systemd's logs
+EnvironmentFile=/etc/sysconfig/example-environment-file
+Environment=PYTHONUNBUFFERED=1
+
+# Automatically restart the service if it crashes
+Restart=on-failure
+
+# Our service just execute and return
+Type=simple
+
+# Use a dedicated user to run our service
+User=pysvcuser
+
+
+[Install]
+
+# Tell systemd to automatically start this service when the system boots
+# (assuming the service is enabled)
+WantedBy=default.target
