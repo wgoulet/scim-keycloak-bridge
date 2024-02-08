@@ -6,7 +6,8 @@ Wants=network.target
 [Service]
 AmbientCapabilities=CAP_SYS_ADMIN
 Environment=JAVA_HOME=/usr/lib/jvm/jre
-ExecStart=/usr/local/keycloak-23.0.4/bin/kc.sh start --https-port=443 --log=console,file --log-file=/var/log/keycloak/keycloak.log  --https-certificate-file=/etc/letsencrypt/live/keycloak.wgoulet.com/fullchain.pem --https-certificate-key-file=/etc/letsencrypt/live/keycloak.wgoulet.com/privkey.pem --hostname=keycloak.wgoulet.com --log='console,file' --log-level="INFO,org.keycloak.events:debug" --log-console-output=json --
+EnvironmentFile=/etc/sysconfig/keycloak
+ExecStart=/usr/local/keycloak-23.0.4/bin/kc.sh start --https-port=443 --log=console,file --log-file=/var/log/keycloak/keycloak.log  --https-certificate-file=/etc/letsencrypt/live/keycloak.wgoulet.com/fullchain.pem --https-certificate-key-file=/etc/letsencrypt/live/keycloak.wgoulet.com/privkey.pem --hostname=keycloak.wgoulet.com 
 
 [Install]
 WantedBy=multi-user.target
