@@ -67,8 +67,9 @@ def delete_user_via_scim(userobj,kc_client):
     # Check if user contains an awsid first; if so use it to 
     # delete the user
     if('awsid' in userobj['attributes']):
-        awsid = userobj['attributes']['awsid']
+        awsid = userobj['attributes']['awsid'][0]
         resp = scimsession.delete(f"{scim_endpoint}Users/{awsid}")
+        pprint.pprint(f"User deletion operation for id {awsid} returned {resp.status_code}")
         return resp
     else:
         return f"Unable to delete user {userobj['id']} missing attribute"

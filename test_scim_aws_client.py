@@ -96,7 +96,7 @@ def test_process_event(setup_connections):
     event['opType'] = "DELETE"
     event['userId'] = userobj[0]['id']
     event['attributes'] = representation
-    event['attributes']['awsid'] = awsid
+    event['attributes']['awsid'] = [awsid]
     event['attributes']['awsenabled'] = ["true"]
     result = scim_client_kc_aws.process_event(event)
     assert result.status_code == 204
