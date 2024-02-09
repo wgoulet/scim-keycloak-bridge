@@ -33,6 +33,8 @@ Install and configure Keycloak; the beta was tested on a bare metal OpenJDK inst
 
 Configure Keycloak as an external SAML identity provider with AWS, see https://docs.aws.amazon.com/singlesignon/latest/userguide/manage-your-identity-source-idp.html.
 
+Enable SCIM provisioning for your AWS IAM Identity Center instance and generate a SCIM access token, see https://docs.aws.amazon.com/singlesignon/latest/userguide/provision-automatically.html.
+
 #### Installing the scim-event-listener
 * Clone this repo on your server running Keycloak 23.0.4 or greater (tested on Amazon Linux 2023)
 * Download the scim-event-listener from the releases link: https://github.com/wgoulet/scim-keycloak-bridge/releases/download/v0.0.1-beta/scim-event-listener.jar (or alternatively, build it from source)
