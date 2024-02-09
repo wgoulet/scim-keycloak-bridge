@@ -21,25 +21,25 @@ def process_event(event):
     kcclient = OAuth2Session(client=client)
     token = kcclient.fetch_token(token_url=token_url,client_id=client_id,client_secret=client_secret)
     if(((event['opType'] == 'CREATE') or (event['opType'] == 'UPDATE')) and (event['resourceType']) == 'GROUP'):
-        check_create_update_group_via_scim(optype=event['opType'],group=json.loads(event['representation']),kc_client=kcclient)
+        return check_create_update_group_via_scim(optype=event['opType'],group=json.loads(event['representation']),kc_client=kcclient)
     #elif((event['opType'] == 'CREATE') and (event['resourceType']) == 'GROUP_MEMBERSHIP'):
     elif((event['resourceType']) == 'GROUP_MEMBERSHIP'):
-        update_user_group_rel_via_scim(event=event,kc_client=kcclient)
+        return update_user_group_rel_via_scim(event=event,kc_client=kcclient)
     if(((event['opType'] == 'UPDATE') or (event['opType'] == 'CREATE')) and (event['resourceType'] == 'USER')):
         # only time we will consider creating the user via SCIM is if we see that an attribute
         # has been set for them. If user is created with attributes in one operation via API
         # we'll handle that as well as if the user is created then attributes added later
-        check_create_update_user_via_scim(user=json.loads(event['representation']),kc_client=kcclient)
+        return check_create_update_user_via_scim(user=json.loads(event['representation']),kc_client=kcclient)
     if((event['opType']) == 'DELETE' and (event['resourceType'] == 'GROUP')):
         group_obj = {}
         group_obj['id'] = event['id']
         group_obj['attributes'] = event['attributes']
-        delete_group_via_scim(groupobj=group_obj,kc_client=kcclient)
+        return delete_group_via_scim(groupobj=group_obj,kc_client=kcclient)
     if((event['opType']) == 'DELETE' and (event['resourceType'] == 'USER')):
         user_obj = {}
-        user_obj['id'] = event['id']
+        user_obj['id'] = event['userId']
         user_obj['attributes'] = event['attributes']
-        delete_user_via_scim(userobj=user_obj,kc_client=kcclient)
+        return delete_user_via_scim(userobj=user_obj,kc_client=kcclient)
 
 def delete_group_via_scim(groupobj,kc_client):
     client_id=os.environ.get('SCIM_TOKEN_CLIENT_ID')
@@ -54,7 +54,8 @@ def delete_group_via_scim(groupobj,kc_client):
     if('awsid' in groupobj['attributes']):
         awsid = groupobj['attributes']['awsid'][0]
         resp = scimsession.delete(f"{scim_endpoint}Groups/{awsid}")
-
+        return resp
+    
 def delete_user_via_scim(userobj,kc_client):
     client_id=os.environ.get('SCIM_TOKEN_CLIENT_ID')
     scim_access_token=os.environ.get('SCIM_ACCESS_TOKEN')
@@ -68,14 +69,17 @@ def delete_user_via_scim(userobj,kc_client):
     if('awsid' in userobj['attributes']):
         awsid = userobj['attributes']['awsid']
         resp = scimsession.delete(f"{scim_endpoint}Users/{awsid}")
-
+        return resp
+    else:
+        return f"Unable to delete user {userobj['id']} missing attribute"
 
 def check_create_update_user_via_scim(user,kc_client):
     # create SCIM compliant user object in AWS IAM ID center if user has appropriate attribute
     # per AWS SCIM docs, The givenName, familyName, userName, and displayName fields are required.
     if('attributes' not in user.keys()):
-        pprint.pprint('user not created in scim, missing attributes')
-        return
+        result = f"User {user['username']} not created in scim, missing attributes"
+        pprint.pprint(result)
+        return result
     else:
         pprint.pprint(f"provisioning user {user} via scim")
     kc_base_url = os.environ.get('KC_BASE_URL')
@@ -129,7 +133,7 @@ def check_create_update_user_via_scim(user,kc_client):
                             'attributes': attributes
                         }
                 resp = kc_client.put(f"{kc_base_url}/admin/realms/Infra/users/{user['id']}",json=userattr)
-                resp
+                return resp
             else:
                 pprint.pprint(resp.json())
                 # Store the AWS ID value as an attribute for the user; we'll need this
@@ -139,7 +143,7 @@ def check_create_update_user_via_scim(user,kc_client):
                     'attributes': attributes
                 }
                 resp = kc_client.put(f"{kc_base_url}/admin/realms/Infra/users/{user['id']}",json=userattr)
-                resp
+                return resp
     elif('awsid' in attributes): 
         if(('awsenabled' not in attributes) or (attributes['awsenabled'][0] != 'true')):
             # remove the user from AWS via scim
@@ -159,6 +163,7 @@ def check_create_update_user_via_scim(user,kc_client):
             }
             resp = kc_client.put(f"{kc_base_url}/admin/realms/Infra/users/{user['id']}",json=userattr)
             pprint.pprint(f"User {user['id']} removed from AWS")
+            return resp
     
         
 def update_user_group_rel_via_scim(event,kc_client):
@@ -204,14 +209,16 @@ def update_user_group_rel_via_scim(event,kc_client):
             ]
         }
     resp = scimsession.patch(f"{scim_endpoint}Groups/{groupinfo['attributes']['awsid'][0]}",json=patchop)
-    resp
+    return resp
     
 def check_create_update_group_via_scim(optype,group,kc_client):
         # create SCIM compliant group object if we have the awsenabled attribute
         # set on the group.
         # per AWS SCIM docs, The displayName fields are required.
         if('awsenabled' not in group['attributes']):
-            return
+            result = f"Group {group['name']} not created in scim, missing attribute"
+            pprint.pprint(result)
+            return result
         elif(group['attributes']['awsenabled'][0] != 'true'):
             return
         # To avoid an infinite loop, if we see that the group in question already
@@ -219,7 +226,7 @@ def check_create_update_group_via_scim(optype,group,kc_client):
         # keep updating the group here, triggering an update event and firing this event
         # again
         elif('awsid' in group['attributes']):
-            return
+            return f"Not processing {group['name']} since awsid attribute already found"
         groupobj = {}
         groupobj['externalId'] = group['id']
         groupobj['displayName'] = group['name']
@@ -247,14 +254,14 @@ def check_create_update_group_via_scim(optype,group,kc_client):
                     attributes['awsid'] = [tmpgroupobj['id']]
                 group['attributes'] = attributes
                 resp = kc_client.put(f"{kc_base_url}/admin/realms/Infra/groups/{group['id']}",json=group)
-                resp
+                return resp
         else:
             pprint.pprint(resp.json())
             awsgroupobj = resp.json()
             attributes['awsid'] = [awsgroupobj['id']]
             group['attributes'] = attributes
             resp = kc_client.put(f"{kc_base_url}/admin/realms/Infra/groups/{group['id']}",json=group)
-            resp
+            return resp
 
 def main():
     rmqpwd = os.environ.get('RABBITMQPWD')
