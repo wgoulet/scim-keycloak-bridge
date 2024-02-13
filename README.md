@@ -71,6 +71,10 @@ Supported operations include:
 - Adding/removing AWS provisioned users from AWS provisioned groups
 - Automatically removing users/groups provisioned to AWS when the users/groups are deleted from Keycloak.
 
+#### Experimental Features
+
+Based on early feedback, functionality to invoke a callback function when a user object is provisioned to AWS was added. See the 'scim_callbacks.py' module for more details. As this feature is flushed out more information will be added here.
+
 ## Help
 
 File issues in the Github issue tracker; I appreciate any feedback and welcome ideas for improving this project.

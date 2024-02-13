@@ -1,4 +1,3 @@
-
 from io import StringIO
 import select
 import csv
@@ -12,6 +11,7 @@ from pubsub import pub
 from oauthlib.oauth2 import BackendApplicationClient
 from requests_oauthlib import OAuth2Session
 import pika
+import scim_callbacks
 
 def process_event(event):
     client_id = os.environ.get('CLIENT_ID')
@@ -52,7 +52,10 @@ def delete_group_via_scim(groupobj,kc_client):
     # Check if group contains an awsid first; if so use it to 
     # delete the group
     if('awsid' in groupobj['attributes']):
-        awsid = groupobj['attributes']['awsid'][0]
+        if(type(groupobj['attributes']['awsid']) is list):
+            awsid = groupobj['attributes']['awsid'][0]
+        else:
+            awsid = groupobj['attributes']['awsid']
         resp = scimsession.delete(f"{scim_endpoint}Groups/{awsid}")
         return resp
     
@@ -67,7 +70,10 @@ def delete_user_via_scim(userobj,kc_client):
     # Check if user contains an awsid first; if so use it to 
     # delete the user
     if('awsid' in userobj['attributes']):
-        awsid = userobj['attributes']['awsid'][0]
+        if(type(userobj['attributes']['awsid']) is list):
+            awsid = userobj['attributes']['awsid'][0]
+        else:
+            awsid = userobj['attributes']['awsid']
         resp = scimsession.delete(f"{scim_endpoint}Users/{awsid}")
         pprint.pprint(f"User deletion operation for id {awsid} returned {resp.status_code}")
         return resp
@@ -144,6 +150,8 @@ def check_create_update_user_via_scim(user,kc_client):
                     'attributes': attributes
                 }
                 resp = kc_client.put(f"{kc_base_url}/admin/realms/Infra/users/{user['id']}",json=userattr)
+                # fire the callback
+                scim_callbacks.create_update_user(userobj,attributes)
                 return resp
     elif('awsid' in attributes): 
         if(('awsenabled' not in attributes) or (attributes['awsenabled'][0] != 'true')):

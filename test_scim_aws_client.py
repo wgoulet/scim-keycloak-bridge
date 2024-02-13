@@ -226,7 +226,7 @@ def test_check_create_update_user_via_scim(setup_connections):
     userobj['email'] = "pytest@test.com"
     userobj['firstName'] = "py"
     userobj['lastName'] = "test"
-    attributes = {"awsenabled":["true"]}
+    attributes = {"awsenabled":["true"],"awsssopermset":["DBEndUserAccess"]}
     userobj['attributes'] = attributes
     resp = kc_client.post(f"{kc_test_url}/users",json=userobj)
     resp
