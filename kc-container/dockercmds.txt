@@ -1,0 +1,11 @@
+# Build the docker image and give it a name; use buildkit so we have access to use secrets mount
+DOCKER_BUILDKIT=1 docker build . -t kcver1 
+# Remove all dangling images/containers to reclaim space
+sudo docker system prune -a
+# Launch the docker container, passing environment variables with secrets to start the container
+sudo docker run  --name keycloakv1 --env KC_DB_PASSWORD=$DBPASS --env RABBITMQPWD=$MQPASS -p 8443:8443 -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=$ADMINPASS kcver1 start --https-port=8443 --log=console  --https-certificate-file=$CERTPATH --https-certificate-key-file=$KEYPATH --proxy=reencrypt --hostname-url=$URL --hostname-port=8443 --hostname-admin-url=$URL
+# Stop container
+sudo docker stop keycloakv1
+# Start container again; note that once the container exists make sure to run this command to start the container
+# as the one with the CLI args will cause keycloak to rebuild itself
+sudo docker start keycloakv1
